@@ -1,0 +1,59 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws --version
+      - echo $AWS_DEFAULT_REGION
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      
+      - docker pull hadolint/hadolint
+      - docker run --rm -i hadolint/hadolint < Dockerfile
+
+      - TRIVY_VERSION=$(curl -sS https://api.github.com/repos/aquasecurity/trivy/releases/latest  | jq -r .name | sed -e 's/v//g')
+      - rpm -ivh https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.rpm
+
+      - DOCKLE_VERSION=$(curl --silent "https://api.github.com/repos/goodwithtech/dockle/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+      - rpm -ivh https://github.com/goodwithtech/dockle/releases/download/v${DOCKLE_VERSION}/dockle_${DOCKLE_VERSION}_Linux-64bit.rpm
+
+      - REPOSITORY_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${PJ_PREFIX}-ecr-simpleapi
+      - BASE_REPOSITORY_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${PJ_PREFIX}-ecr-base
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
+      - docker_img_name=$REPOSITORY_URI
+      - docker_tag=$IMAGE_TAG
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building the Docker image...
+      - npm i
+      - npm run build
+      - docker build -t $REPOSITORY_URI:latest . --build-arg IMAGE=${BASE_REPOSITORY_URI} --build-arg VERSION=latest
+      - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+      - docker pull knqyf263/vuln-image:latest
+  post_build:
+      commands:
+      - echo Build completed on `date`
+      - trivy image --no-progress --format template --template '@/usr/local/share/trivy/templates/html.tpl' -o dist/report.html --severity HIGH,CRITICAL knqyf263/vuln-image:latest
+      - aws s3 sync dist/ s3://cnt-kumagai-report/
+      - trivy image --no-progress -f json -o results.json --exit-code 0 knqyf263/vuln-image:latest
+      # - python3 sechub_parser.py
+      - dockle --format json --exit-code 1 --exit-level "FATAL" ${REPOSITORY_URI}:${IMAGE_TAG}
+      - exit `echo $?`
+      - docker push $REPOSITORY_URI:latest
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - printf '[{"name":"simpleapi","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+      - cat imagedefinitions.json
+artifacts:
+    files: 
+        - '**/*'
+    secondary-artifacts:
+      artifact1:
+        base-directory: $CODEBUILD_SRC_DIR
+        files:
+        - imagedefinitions.json
+      artifact2:
+        base-directory: $CODEBUILD_SRC_DIR
+        files:
+        - report.html

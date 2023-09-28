@@ -1,0 +1,1190 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "create DevSecOps Trial environment"
+Parameters:
+  PJPrefix:
+    Description: "Prefix for each service name you create(ex: toma-01-)"
+    Type: String
+  CloudshellGlobalIp:
+    Description: "Please enter the result of executing `curl http://checkip.amazonaws.com/` on AWS CloudShell.(ex: 4.112.150.13)"
+    Type: String
+  IamUser:
+    Description: "Please enter the IAMUser logged into the console.(ex: toma)"
+    Type: String
+
+Resources:
+
+# VPC環境周り
+  EC2RouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !GetAtt EC2Subnet.VpcId
+      Tags: 
+      - 
+        Key: "Name"
+        Value: !Sub "${PJPrefix}-rtb-private2-${EC2Subnet2.AvailabilityZone}"
+
+  EC2RouteTable2:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !GetAtt EC2Subnet.VpcId
+      Tags: 
+      - 
+        Key: "Name"
+        Value: !Sub "${PJPrefix}-rtb-public"
+
+  EC2RouteTable3:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !GetAtt EC2Subnet.VpcId
+      Tags: 
+      - 
+        Key: "Name"
+        Value: !Sub "${PJPrefix}-rtb-private1-${EC2Subnet.AvailabilityZone}"
+
+  EC2Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref EC2RouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref EC2InternetGateway
+
+  EC2RouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref EC2RouteTable
+      SubnetId: !Ref EC2Subnet2
+
+  EC2RouteTableAssociation2:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref EC2RouteTable3
+      SubnetId: !Ref EC2Subnet3
+
+  EC2RouteTableAssociation3:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref EC2RouteTable2
+      SubnetId: !Ref EC2Subnet
+
+  EC2RouteTableAssociation4:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref EC2RouteTable2
+      SubnetId: !Ref EC2Subnet4
+
+  EC2SecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "${PJPrefix}-sg-ecs-connect-alb-default"
+      GroupName: !Sub "${PJPrefix}-sg-ecs-connect-alb-default"
+      Tags: 
+      - 
+        Key: "Name"
+        Value: !Sub "${PJPrefix}-sg-ecs-connect-alb-default"
+      VpcId: !GetAtt EC2Subnet.VpcId
+      SecurityGroupIngress: 
+      - 
+        CidrIp: !Sub "${CloudshellGlobalIp}/32"
+        Description: "cloudshell"
+        FromPort: 80
+        IpProtocol: "tcp"
+        ToPort: 80
+      - 
+        SourceSecurityGroupId: !Ref EC2SecurityGroup2
+        SourceSecurityGroupOwnerId: !Ref AWS::AccountId
+        FromPort: 80
+        IpProtocol: "tcp"
+        ToPort: 80
+      SecurityGroupEgress: 
+      - 
+        CidrIp: "0.0.0.0/0"
+        IpProtocol: "-1"
+
+  EC2SecurityGroup2:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "${PJPrefix}-sg-vpc-default"
+      GroupName: !Sub "${PJPrefix}-sg-ecs-sg-vpc-default"
+      Tags: 
+      - 
+        Key: "Name"
+        Value: !Sub "${PJPrefix}-sg-ecs-sg-vpc-default"
+      VpcId: !GetAtt EC2Subnet.VpcId
+      SecurityGroupEgress: 
+      - 
+        CidrIp: "0.0.0.0/0"
+        IpProtocol: "-1"
+
+  EC2SecurityGroup2Igress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt EC2SecurityGroup2.GroupId
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !GetAtt EC2SecurityGroup2.GroupId
+
+  EC2SecurityGroup3:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "${PJPrefix}-sg-vpc-dkr-endpoint"
+      GroupName: !Sub "${PJPrefix}-sg-vpc-dkr-endpoint"
+      Tags: 
+      - 
+        Key: "Name"
+        Value: !Sub "${PJPrefix}-sg-vpc-dkr-endpoint"
+      VpcId: !Ref EC2VPC
+      SecurityGroupIngress: 
+      - 
+        CidrIp: "10.0.0.0/16"
+        Description: "local"
+        FromPort: 0
+        IpProtocol: "tcp"
+        ToPort: 65535
+      - 
+        CidrIp: "0.0.0.0/0"
+        Description: "local"
+        FromPort: 0
+        IpProtocol: "tcp"
+        ToPort: 65535
+      - 
+        SourceSecurityGroupId: !Ref EC2SecurityGroup2
+        SourceSecurityGroupOwnerId: !Ref AWS::AccountId
+        FromPort: 0
+        IpProtocol: "tcp"
+        ToPort: 65535
+
+  EC2Subnet:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !GetAtt EC2Subnet3.AvailabilityZone
+      CidrBlock: "10.0.0.0/20"
+      VpcId: !GetAtt EC2Subnet2.VpcId
+      MapPublicIpOnLaunch: false
+      Tags: 
+      - 
+        Key: "Name"
+        Value: !Sub "${PJPrefix}-subnet-public1-${EC2Subnet3.AvailabilityZone}"
+
+  EC2Subnet2:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !GetAtt EC2Subnet4.AvailabilityZone
+      CidrBlock: "10.0.144.0/20"
+      VpcId: !GetAtt EC2Subnet3.VpcId
+      MapPublicIpOnLaunch: false
+      Tags: 
+      - 
+        Key: "Name"
+        Value: !Sub "${PJPrefix}-subnet-private2-${EC2Subnet4.AvailabilityZone}"
+
+  EC2Subnet3:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Sub "${AWS::Region}a"
+      CidrBlock: "10.0.128.0/20"
+      VpcId: !GetAtt EC2Subnet4.VpcId
+      MapPublicIpOnLaunch: false
+      Tags: 
+      - 
+        Key: "Name"
+        Value: !Sub "${PJPrefix}-subnet-private1-${AWS::Region}a"
+
+  EC2Subnet4:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Sub "${AWS::Region}c"
+      CidrBlock: "10.0.16.0/20"
+      VpcId: !Ref EC2VPC
+      MapPublicIpOnLaunch: false
+      Tags: 
+      - 
+        Key: "Name"
+        Value: !Sub "${PJPrefix}-subnet-public2-${AWS::Region}c"
+
+  EC2VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: "10.0.0.0/16"
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: "default"
+      Tags: 
+      - 
+        Key: "Name"
+        Value: !Sub "${PJPrefix}-vpc"
+
+  EC2InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags: 
+      - 
+        Key: "Name"
+        Value: !Sub "${PJPrefix}-igw"
+
+  EC2InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: 
+      InternetGatewayId: !Ref EC2InternetGateway
+      VpcId: !Ref EC2VPC
+
+  EC2VPCEndpoint:
+    Type: "AWS::EC2::VPCEndpoint"
+    Properties:
+      VpcEndpointType: "Gateway"
+      VpcId: !GetAtt EC2Subnet.VpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      PolicyDocument: "{\"Version\":\"2008-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":\"*\",\"Resource\":\"*\"}]}"
+      RouteTableIds: 
+      - !Ref EC2RouteTable
+      - !Ref EC2RouteTable3
+      PrivateDnsEnabled: false
+
+  EC2VPCEndpoint2:
+    Type: "AWS::EC2::VPCEndpoint"
+    Properties:
+      VpcEndpointType: "Interface"
+      VpcId: !GetAtt EC2Subnet.VpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.dkr"
+      PolicyDocument: |
+          {
+            "Statement": [
+              {
+                "Action": "*", 
+                "Effect": "Allow", 
+                "Principal": "*", 
+                "Resource": "*"
+              }
+            ]
+          }
+      SubnetIds: 
+      - !Ref EC2Subnet3
+      - !Ref EC2Subnet2
+      PrivateDnsEnabled: true
+      SecurityGroupIds: 
+      - !Ref EC2SecurityGroup3
+
+  EC2VPCEndpoint3:
+    Type: "AWS::EC2::VPCEndpoint"
+    Properties:
+      VpcEndpointType: "Interface"
+      VpcId: !GetAtt EC2Subnet.VpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.api"
+      PolicyDocument: |
+          {
+            "Statement": [
+              {
+                "Action": "*", 
+                "Effect": "Allow", 
+                "Principal": "*", 
+                "Resource": "*"
+              }
+            ]
+          }
+      SubnetIds: 
+      - !Ref EC2Subnet3
+      - !Ref EC2Subnet2
+      PrivateDnsEnabled: true
+      SecurityGroupIds: 
+      - !Ref EC2SecurityGroup3
+
+  EC2VPCEndpoint4:
+    Type: "AWS::EC2::VPCEndpoint"
+    Properties:
+      VpcEndpointType: "Interface"
+      VpcId: !GetAtt EC2Subnet.VpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.logs"
+      PolicyDocument: |
+          {
+            "Statement": [
+              {
+                "Action": "*", 
+                "Effect": "Allow", 
+                "Principal": "*", 
+                "Resource": "*"
+              }
+            ]
+          }
+      SubnetIds: 
+      - !Ref EC2Subnet3
+      - !Ref EC2Subnet2
+      PrivateDnsEnabled: true
+      SecurityGroupIds: 
+      - !Ref EC2SecurityGroup3
+
+# ECR/ECS環境周り
+  ECRRepository:
+    Type: "AWS::ECR::Repository"
+    Properties:
+      RepositoryName: !Sub "${PJPrefix}-ecr-base"
+      LifecyclePolicy: 
+        RegistryId: !Ref AWS::AccountId
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Delete more than 20 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+
+  ECRRepository2:
+    Type: "AWS::ECR::Repository"
+    Properties:
+      RepositoryName: !Sub "${PJPrefix}-ecr-simpleapi"
+      RepositoryPolicyText : !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowPushPull",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "arn:aws:iam::${AWS::AccountId}:user/${IamUser}"
+              },
+              "Action": [
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:BatchGetImage",
+                "ecr:CompleteLayerUpload",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:InitiateLayerUpload",
+                "ecr:PutImage",
+                "ecr:UploadLayerPart"
+              ]
+            }
+          ]
+        }
+      LifecyclePolicy: 
+        RegistryId: !Ref AWS::AccountId
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Delete more than 20 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+
+  ECSCluster:
+    Type: "AWS::ECS::Cluster"
+    Properties:
+      ClusterName: !Sub "${PJPrefix}-ecs"
+      CapacityProviders: 
+      - "FARGATE"
+      - "FARGATE_SPOT"
+
+  ECSService:
+    Type: "AWS::ECS::Service"
+    Properties:
+      ServiceName: !Sub "${ECSCluster}-service-simpleapi"
+      Cluster: !GetAtt ECSCluster.Arn
+      LoadBalancers: 
+      - 
+        TargetGroupArn: !Ref ElasticLoadBalancingV2TargetGroup
+        ContainerName: "simpleapi"
+        ContainerPort: 3000
+      DesiredCount: 1
+      PlatformVersion: "LATEST"
+      TaskDefinition: !Ref ECSTaskDefinition
+      DeploymentConfiguration: 
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker: 
+          Enable: true
+          Rollback: true
+      # 下記は既に存在しているロールを指定するとエラーになるのでコメントアウト
+      # Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS"
+      NetworkConfiguration: 
+        AwsvpcConfiguration: 
+          AssignPublicIp: "DISABLED"
+          SecurityGroups: 
+          - !Ref EC2SecurityGroup2
+          Subnets: 
+          - !Ref EC2Subnet3
+          - !Ref EC2Subnet2
+      HealthCheckGracePeriodSeconds: 0
+      SchedulingStrategy: "REPLICA"
+      DeploymentController: 
+        Type: "ECS"
+      CapacityProviderStrategy: 
+      - 
+        CapacityProvider: "FARGATE"
+        Weight: 1
+        Base: 0
+    DependsOn: ElasticLoadBalancingV2Listener
+
+  ECSTaskDefinition:
+    Type: "AWS::ECS::TaskDefinition"
+    Properties:
+      Family: !Sub "${ECSCluster}-task"
+      ExecutionRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole"
+      NetworkMode: "awsvpc"
+      RequiresCompatibilities: 
+      - "FARGATE"
+      Cpu: "512"
+      Memory: "1024"
+      ContainerDefinitions: 
+      - 
+        Essential: true
+        Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${PJPrefix}-ecr-simpleapi:latest"
+        LogConfiguration: 
+          LogDriver: "awslogs"
+          Options: 
+            awslogs-create-group: "true"
+            awslogs-group: !Ref ECSLogGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: "ecs"
+        Name: "simpleapi"
+        PortMappings: 
+        - 
+          ContainerPort: 3000
+          HostPort: 3000
+          Protocol: "tcp"
+
+  ECSLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Sub "/ecs/${ECSCluster}-task"
+
+  ServiceDiscoveryHttpNamespace:
+    Type: "AWS::ServiceDiscovery::HttpNamespace"
+    Properties:
+      Name: !Ref ECSCluster
+
+  ElasticLoadBalancingV2LoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      Name: !Sub "${PJPrefix}-alb"
+      Scheme: "internet-facing"
+      Type: "application"
+      Subnets: 
+      - !Ref EC2Subnet
+      - !Ref EC2Subnet4
+      SecurityGroups: 
+      - !Ref EC2SecurityGroup
+      - !Ref EC2SecurityGroup2
+      IpAddressType: "ipv4"
+      LoadBalancerAttributes: 
+      - 
+        Key: "access_logs.s3.enabled"
+        Value: "false"
+      - 
+        Key: "idle_timeout.timeout_seconds"
+        Value: "60"
+      - 
+        Key: "deletion_protection.enabled"
+        Value: "false"
+      - 
+        Key: "routing.http2.enabled"
+        Value: "true"
+      - 
+        Key: "routing.http.drop_invalid_header_fields.enabled"
+        Value: "false"
+      - 
+        Key: "routing.http.xff_client_port.enabled"
+        Value: "false"
+      - 
+        Key: "routing.http.preserve_host_header.enabled"
+        Value: "false"
+      - 
+        Key: "routing.http.xff_header_processing.mode"
+        Value: "append"
+      - 
+        Key: "load_balancing.cross_zone.enabled"
+        Value: "true"
+      - 
+        Key: "routing.http.desync_mitigation_mode"
+        Value: "defensive"
+      - 
+        Key: "waf.fail_open.enabled"
+        Value: "false"
+      - 
+        Key: "routing.http.x_amzn_tls_version_and_cipher_suite.enabled"
+        Value: "false"
+    DependsOn: EC2InternetGatewayAttachment
+
+  ElasticLoadBalancingV2Listener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      LoadBalancerArn: !Ref ElasticLoadBalancingV2LoadBalancer
+      Port: 80
+      Protocol: "HTTP"
+      DefaultActions: 
+      - 
+        TargetGroupArn: !Ref ElasticLoadBalancingV2TargetGroup
+        Type: "forward"
+
+  ElasticLoadBalancingV2TargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: "/"
+      Port: 80
+      Protocol: "HTTP"
+      HealthCheckPort: "traffic-port"
+      HealthCheckProtocol: "HTTP"
+      HealthCheckTimeoutSeconds: 5
+      UnhealthyThresholdCount: 2
+      TargetType: "ip"
+      Matcher: 
+        HttpCode: "200"
+      HealthyThresholdCount: 5
+      VpcId: !GetAtt EC2Subnet.VpcId
+      Name: !Sub "${PJPrefix}-targetgp-simpleapi"
+      HealthCheckEnabled: true
+      TargetGroupAttributes: 
+      - 
+        Key: "target_group_health.unhealthy_state_routing.minimum_healthy_targets.count"
+        Value: "1"
+      - 
+        Key: "stickiness.enabled"
+        Value: "false"
+      - 
+        Key: "target_group_health.unhealthy_state_routing.minimum_healthy_targets.percentage"
+        Value: "off"
+      - 
+        Key: "deregistration_delay.timeout_seconds"
+        Value: "300"
+      - 
+        Key: "target_group_health.dns_failover.minimum_healthy_targets.count"
+        Value: "1"
+      - 
+        Key: "stickiness.app_cookie.cookie_name"
+        Value: ""
+      - 
+        Key: "stickiness.type"
+        Value: "lb_cookie"
+      - 
+        Key: "stickiness.lb_cookie.duration_seconds"
+        Value: "86400"
+      - 
+        Key: "slow_start.duration_seconds"
+        Value: "0"
+      - 
+        Key: "stickiness.app_cookie.duration_seconds"
+        Value: "86400"
+      - 
+        Key: "target_group_health.dns_failover.minimum_healthy_targets.percentage"
+        Value: "off"
+      - 
+        Key: "load_balancing.cross_zone.enabled"
+        Value: "use_load_balancer_configuration"
+      - 
+        Key: "load_balancing.algorithm.type"
+        Value: "round_robin"
+      Targets: 
+      - 
+        Id: "10.0.135.75"
+        Port: 3000
+        AvailabilityZone: !GetAtt EC2Subnet.AvailabilityZone
+
+# コード管理やCI/CD周り
+  CodeCommitRepository:
+    Type: "AWS::CodeCommit::Repository"
+    Properties:
+      RepositoryDescription: "A repository for studying tools and ways of thinking that can be used in DevSecOps"
+      RepositoryName: !Sub "${PJPrefix}-codecommit"
+
+  EventsRule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Name: !Sub "codepipeline-${PJPrefix}-main-rule"
+      Description: "Amazon CloudWatch イベントのルールに変更が発生すると、自動的にパイプラインを開始するために、AWS CodeCommit ソースリポジトリとブランチを削除すると、そのパイプラインの変更が検出されない場合があります。続きを読む: http://docs.aws.amazon.com/codepipeline/latest/userguide/pipelines-about-starting.html"
+      EventPattern: !Sub "{\"source\":[\"aws.codecommit\"],\"detail-type\":[\"CodeCommit Repository State Change\"],\"resources\":[\"${CodeCommitRepository.Arn}\"],\"detail\":{\"event\":[\"referenceCreated\",\"referenceUpdated\"],\"referenceType\":[\"branch\"],\"referenceName\":[\"main\"]}}"
+      State: "ENABLED"
+      Targets: 
+      - 
+        Arn: !Sub "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${PJPrefix}-codepipeline-devsecops"
+        Id: !Sub "codepipeline-${PJPrefix}-codepipeline-devsecops"
+        RoleArn: !GetAtt IAMRole3.Arn
+      EventBusName: "default"
+
+  CodeBuildProject:
+    Type: "AWS::CodeBuild::Project"
+    Properties:
+      Name: !Sub "${PJPrefix}-codebuild"
+      Source: 
+        BuildSpec: "buildspec.yml"
+        InsecureSsl: false
+        Type: "CODEPIPELINE"
+      Artifacts: 
+        EncryptionDisabled: false
+        Name: !Sub "${PJPrefix}-codebuild"
+        Packaging: "NONE"
+        Type: "CODEPIPELINE"
+      Cache: 
+        Type: "NO_CACHE"
+      Environment: 
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        EnvironmentVariables: 
+        - 
+          Name: "AWS_ACCOUNT_ID"
+          Type: "PLAINTEXT"
+          Value: !Ref AWS::AccountId
+        - 
+          Name: "PJ_PREFIX"
+          Type: "PLAINTEXT"
+          Value: !Ref PJPrefix
+        Image: "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
+        ImagePullCredentialsType: "CODEBUILD"
+        PrivilegedMode: true
+        Type: "LINUX_CONTAINER"
+      ServiceRole: !GetAtt IAMRole2.Arn
+      TimeoutInMinutes: 60
+      QueuedTimeoutInMinutes: 480
+      EncryptionKey: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3"
+      VpcConfig: {}
+      BadgeEnabled: false
+      LogsConfig: 
+        CloudWatchLogs: 
+          Status: "ENABLED"
+        S3Logs: 
+          Status: "DISABLED"
+          EncryptionDisabled: false
+      Visibility: "PRIVATE"
+
+  CodePipelinePipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name: !Sub "${PJPrefix}-codepipeline-devsecops"
+      RoleArn: !GetAtt IAMRole.Arn
+      ArtifactStore: 
+        Location: !Sub "codepipeline-${AWS::Region}-283893798682"
+        Type: "S3"
+      Stages: 
+      - 
+        Name: "Source"
+        Actions: 
+        - 
+          Name: "Source"
+          ActionTypeId: 
+            Category: "Source"
+            Owner: "AWS"
+            Provider: "CodeCommit"
+            Version: "1"
+          Configuration: 
+            BranchName: "main"
+            OutputArtifactFormat: "CODE_ZIP"
+            PollForSourceChanges: "false"
+            RepositoryName: !GetAtt CodeCommitRepository.Name
+          OutputArtifacts: 
+          - 
+            Name: "SourceArtifact"
+          Region: !Ref AWS::Region
+          Namespace: "SourceVariables"
+          RunOrder: 1
+      - 
+        Name: "Build"
+        Actions: 
+        - 
+          Name: "Build"
+          ActionTypeId: 
+            Category: "Build"
+            Owner: "AWS"
+            Provider: "CodeBuild"
+            Version: "1"
+          Configuration: 
+            ProjectName: !Ref CodeBuildProject
+          InputArtifacts: 
+          - 
+            Name: "SourceArtifact"
+          OutputArtifacts: 
+          - 
+            Name: "BuildArtifact"
+          Region: !Ref AWS::Region
+          Namespace: "BuildVariables"
+          RunOrder: 1
+      - 
+        Name: "Deploy"
+        Actions: 
+        - 
+          Name: "Deploy"
+          ActionTypeId: 
+            Category: "Deploy"
+            Owner: "AWS"
+            Provider: "ECS"
+            Version: "1"
+          Configuration: 
+            ClusterName: !Ref ECSCluster
+            FileName: "imagedefinitions.json"
+            ServiceName: !Sub "${ECSCluster}-service-simpleapi"
+          InputArtifacts: 
+          - 
+            Name: "BuildArtifact"
+          Region: !Ref AWS::Region
+          RunOrder: 1
+
+# スキャン結果確認環境用
+  CloudFrontDistribution:
+    Type: "AWS::CloudFront::Distribution"
+    Properties:
+      DistributionConfig: 
+        Origins: 
+        - 
+          ConnectionAttempts: 3
+          ConnectionTimeout: 10
+          DomainName: !Sub "${S3Bucket}.s3.${AWS::Region}.amazonaws.com"
+          Id: !Ref S3Bucket
+          OriginPath: ""
+          S3OriginConfig: 
+            OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CloudFrontCloudFrontOriginAccessIdentity}"
+        DefaultCacheBehavior: 
+          AllowedMethods: 
+          - "HEAD"
+          - "GET"
+          CachedMethods: 
+          - "HEAD"
+          - "GET"
+          Compress: true
+          CachePolicyId: "658327ea-f89d-4fab-a63d-7e88639e58f6"
+          SmoothStreaming: false
+          TargetOriginId: !Ref S3Bucket
+          ViewerProtocolPolicy: "allow-all"
+        Comment: ""
+        PriceClass: "PriceClass_All"
+        Enabled: true
+        ViewerCertificate: 
+          CloudFrontDefaultCertificate: true
+        Restrictions: 
+          GeoRestriction: 
+            RestrictionType: "none"
+        HttpVersion: "http2"
+        DefaultRootObject: "report.html"
+        IPV6Enabled: true
+
+  CloudFrontCloudFrontOriginAccessIdentity:
+    Type: "AWS::CloudFront::CloudFrontOriginAccessIdentity"
+    Properties:
+      CloudFrontOriginAccessIdentityConfig: 
+        Comment: !Sub "${S3Bucket}.s3.${AWS::Region}.amazonaws.com"
+
+  S3Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Sub "${PJPrefix}-report"
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - 
+          ServerSideEncryptionByDefault: 
+            SSEAlgorithm: "AES256"
+          BucketKeyEnabled: true
+      OwnershipControls: 
+        Rules: 
+        - 
+          ObjectOwnership: "BucketOwnerEnforced"
+      PublicAccessBlockConfiguration: 
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  S3BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument: 
+        Version: "2008-10-17"
+        Id: "PolicyForCloudFrontPrivateContent"
+        Statement: 
+        - 
+          Sid: "1"
+          Effect: "Allow"
+          Principal: 
+            AWS: !Sub "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontCloudFrontOriginAccessIdentity}"
+          Action: "s3:GetObject"
+          Resource: !Sub "arn:aws:s3:::${S3Bucket}/*"
+
+# IAM権限周りいろいろ
+  IAMManagedPolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName: !Sub "CodeBuildBasePolicy-${PJPrefix}-codebuild-${AWS::Region}"
+      Path: "/service-role/"
+      PolicyDocument: !Sub |
+          {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Resource": [
+                          "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${PJPrefix}-codebuild",
+                          "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${PJPrefix}-codebuild:*"
+                      ],
+                      "Action": [
+                          "logs:CreateLogGroup",
+                          "logs:CreateLogStream",
+                          "logs:PutLogEvents"
+                      ]
+                  },
+                  {
+                      "Effect": "Allow",
+                      "Resource": [
+                          "arn:aws:s3:::codepipeline-${AWS::Region}-*"
+                      ],
+                      "Action": [
+                          "s3:PutObject",
+                          "s3:GetObject",
+                          "s3:GetObjectVersion",
+                          "s3:GetBucketAcl",
+                          "s3:GetBucketLocation"
+                      ]
+                  },
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "codebuild:CreateReportGroup",
+                          "codebuild:CreateReport",
+                          "codebuild:UpdateReport",
+                          "codebuild:BatchPutTestCases",
+                          "codebuild:BatchPutCodeCoverages"
+                      ],
+                      "Resource": [
+                          "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:report-group/${PJPrefix}-codebuild-*"
+                      ]
+                  }
+              ]
+          }
+
+  IAMManagedPolicy2:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName: !Sub "start-pipeline-execution-${AWS::Region}-${PJPrefix}-codepipeline-devsecops"
+      Path: "/service-role/"
+      PolicyDocument: !Sub |
+          {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "codepipeline:StartPipelineExecution"
+                      ],
+                      "Resource": [
+                          "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${PJPrefix}-codepipeline-devsecops"
+                      ]
+                  }
+              ]
+          }
+
+  IAMManagedPolicy3:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName: !Sub "AWSCodePipelineServiceRole-${AWS::Region}-${PJPrefix}-codepipeline-devsecops"
+      Path: "/service-role/"
+      PolicyDocument: |
+          {
+              "Statement": [
+                  {
+                      "Action": [
+                          "iam:PassRole"
+                      ],
+                      "Resource": "*",
+                      "Effect": "Allow",
+                      "Condition": {
+                          "StringEqualsIfExists": {
+                              "iam:PassedToService": [
+                                  "cloudformation.amazonaws.com",
+                                  "elasticbeanstalk.amazonaws.com",
+                                  "ec2.amazonaws.com",
+                                  "ecs-tasks.amazonaws.com"
+                              ]
+                          }
+                      }
+                  },
+                  {
+                      "Action": [
+                          "codecommit:CancelUploadArchive",
+                          "codecommit:GetBranch",
+                          "codecommit:GetCommit",
+                          "codecommit:GetRepository",
+                          "codecommit:GetUploadArchiveStatus",
+                          "codecommit:UploadArchive"
+                      ],
+                      "Resource": "*",
+                      "Effect": "Allow"
+                  },
+                  {
+                      "Action": [
+                          "codedeploy:CreateDeployment",
+                          "codedeploy:GetApplication",
+                          "codedeploy:GetApplicationRevision",
+                          "codedeploy:GetDeployment",
+                          "codedeploy:GetDeploymentConfig",
+                          "codedeploy:RegisterApplicationRevision"
+                      ],
+                      "Resource": "*",
+                      "Effect": "Allow"
+                  },
+                  {
+                      "Action": [
+                          "codestar-connections:UseConnection"
+                      ],
+                      "Resource": "*",
+                      "Effect": "Allow"
+                  },
+                  {
+                      "Action": [
+                          "elasticbeanstalk:*",
+                          "ec2:*",
+                          "elasticloadbalancing:*",
+                          "autoscaling:*",
+                          "cloudwatch:*",
+                          "s3:*",
+                          "sns:*",
+                          "cloudformation:*",
+                          "rds:*",
+                          "sqs:*",
+                          "ecs:*"
+                      ],
+                      "Resource": "*",
+                      "Effect": "Allow"
+                  },
+                  {
+                      "Action": [
+                          "lambda:InvokeFunction",
+                          "lambda:ListFunctions"
+                      ],
+                      "Resource": "*",
+                      "Effect": "Allow"
+                  },
+                  {
+                      "Action": [
+                          "opsworks:CreateDeployment",
+                          "opsworks:DescribeApps",
+                          "opsworks:DescribeCommands",
+                          "opsworks:DescribeDeployments",
+                          "opsworks:DescribeInstances",
+                          "opsworks:DescribeStacks",
+                          "opsworks:UpdateApp",
+                          "opsworks:UpdateStack"
+                      ],
+                      "Resource": "*",
+                      "Effect": "Allow"
+                  },
+                  {
+                      "Action": [
+                          "cloudformation:CreateStack",
+                          "cloudformation:DeleteStack",
+                          "cloudformation:DescribeStacks",
+                          "cloudformation:UpdateStack",
+                          "cloudformation:CreateChangeSet",
+                          "cloudformation:DeleteChangeSet",
+                          "cloudformation:DescribeChangeSet",
+                          "cloudformation:ExecuteChangeSet",
+                          "cloudformation:SetStackPolicy",
+                          "cloudformation:ValidateTemplate"
+                      ],
+                      "Resource": "*",
+                      "Effect": "Allow"
+                  },
+                  {
+                      "Action": [
+                          "codebuild:BatchGetBuilds",
+                          "codebuild:StartBuild",
+                          "codebuild:BatchGetBuildBatches",
+                          "codebuild:StartBuildBatch"
+                      ],
+                      "Resource": "*",
+                      "Effect": "Allow"
+                  },
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "devicefarm:ListProjects",
+                          "devicefarm:ListDevicePools",
+                          "devicefarm:GetRun",
+                          "devicefarm:GetUpload",
+                          "devicefarm:CreateUpload",
+                          "devicefarm:ScheduleRun"
+                      ],
+                      "Resource": "*"
+                  },
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "servicecatalog:ListProvisioningArtifacts",
+                          "servicecatalog:CreateProvisioningArtifact",
+                          "servicecatalog:DescribeProvisioningArtifact",
+                          "servicecatalog:DeleteProvisioningArtifact",
+                          "servicecatalog:UpdateProduct"
+                      ],
+                      "Resource": "*"
+                  },
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "cloudformation:ValidateTemplate"
+                      ],
+                      "Resource": "*"
+                  },
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "ecr:DescribeImages"
+                      ],
+                      "Resource": "*"
+                  },
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "states:DescribeExecution",
+                          "states:DescribeStateMachine",
+                          "states:StartExecution"
+                      ],
+                      "Resource": "*"
+                  },
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "appconfig:StartDeployment",
+                          "appconfig:StopDeployment",
+                          "appconfig:GetDeployment"
+                      ],
+                      "Resource": "*"
+                  }
+              ],
+              "Version": "2012-10-17"
+          }
+
+  IAMManagedPolicy4:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName: !Sub "CodeBuildVpcPolicy-${PJPrefix}-codebuild-${AWS::Region}"
+      Path: "/service-role/"
+      PolicyDocument: !Sub |
+          {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "ec2:CreateNetworkInterface",
+                          "ec2:DescribeDhcpOptions",
+                          "ec2:DescribeNetworkInterfaces",
+                          "ec2:DeleteNetworkInterface",
+                          "ec2:DescribeSubnets",
+                          "ec2:DescribeSecurityGroups",
+                          "ec2:DescribeVpcs"
+                      ],
+                      "Resource": "*"
+                  },
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "ec2:CreateNetworkInterfacePermission"
+                      ],
+                      "Resource": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*",
+                      "Condition": {
+                          "StringEquals": {
+                              "ec2:Subnet": [
+                                  "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${EC2Subnet3}"
+                              ],
+                              "ec2:AuthorizedService": "codebuild.amazonaws.com"
+                          }
+                      }
+                  }
+              ]
+          }
+
+  IAMPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyDocument: !Sub |
+          {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Sid": "VisualEditor0",
+                      "Effect": "Allow",
+                      "Action": [
+                          "s3:PutObject",
+                          "s3:PutObjectAcl",
+                          "s3:GetObject",
+                          "s3:GetObjectAcl",
+                          "s3:ListBucket",
+                          "s3:AbortMultipartUpload"
+                      ],
+                      "Resource": [
+                          "arn:aws:s3:::${S3Bucket}",
+                          "arn:aws:s3:::${S3Bucket}/*"
+                      ]
+                  },
+                  {
+                      "Sid": "VisualEditor1",
+                      "Effect": "Allow",
+                      "Action": [
+                          "securityhub:BatchImportFindings"
+                      ],
+                      "Resource": [
+                          "*"
+                      ]
+                  },
+                  {
+                      "Sid": "VisualEditor2",
+                      "Effect": "Allow",
+                      "Action": [
+                          "ecr:GetDownloadUrlForLayer",
+                          "ecr:BatchGetImage",
+                          "ecr:BatchCheckLayerAvailability",
+                          "ecr:PutImage",
+                          "ecr:InitiateLayerUpload",
+                          "ecr:UploadLayerPart",
+                          "ecr:CompleteLayerUpload"
+                      ],
+                      "Resource":[
+                          "*"
+                      ]
+                  }
+              ]
+          }
+      Roles: 
+        - !Ref IAMRole2
+      PolicyName: !Sub "${PJPrefix}-devsecops-policy"
+
+  IAMRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/service-role/"
+      RoleName: !Sub "AWSCodePipelineServiceRole-${PJPrefix}-codepipel"
+      AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"codepipeline.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+      - !Sub "arn:aws:iam::${AWS::AccountId}:policy/service-role/AWSCodePipelineServiceRole-${AWS::Region}-${PJPrefix}-codepipeline-devsecops"
+
+  IAMRole2:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/service-role/"
+      RoleName: !Sub "${PJPrefix}-codebuild-service-role"
+      AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"codebuild.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+      - "arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilderECRContainerBuilds"
+      - !Ref IAMManagedPolicy4
+      - !Ref IAMManagedPolicy
+
+  IAMRole3:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/service-role/"
+      RoleName: !Sub "cwe-role-${AWS::Region}-${PJPrefix}-codepipeline-devsecops"
+      AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"events.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+      - !Ref IAMManagedPolicy2
