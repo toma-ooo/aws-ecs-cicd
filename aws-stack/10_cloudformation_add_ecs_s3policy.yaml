@@ -311,30 +311,6 @@ Resources:
       - !Ref EC2SecurityGroup3
 
 # ECR/ECS環境周り
-  ECRRepository:
-    Type: "AWS::ECR::Repository"
-    Properties:
-      RepositoryName: !Sub "${PJPrefix}-ecr-base"
-      LifecyclePolicy: 
-        RegistryId: !Ref AWS::AccountId
-        LifecyclePolicyText: |
-          {
-            "rules": [
-              {
-                "rulePriority": 1,
-                "description": "Delete more than 20 images",
-                "selection": {
-                  "tagStatus": "any",
-                  "countType": "imageCountMoreThan",
-                  "countNumber": 20
-                },
-                "action": {
-                  "type": "expire"
-                }
-              }
-            ]
-          }
-
   ECRRepository2:
     Type: "AWS::ECR::Repository"
     Properties:
@@ -665,7 +641,7 @@ Resources:
       Name: !Sub "${PJPrefix}-codepipeline-devsecops"
       RoleArn: !GetAtt IAMRole.Arn
       ArtifactStore: 
-        Location: !Sub "codepipeline-${AWS::Region}-283893798682"
+        Location: !Ref S3Bucket2
         Type: "S3"
       Stages: 
       - 
@@ -809,6 +785,53 @@ Resources:
             AWS: !Sub "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontCloudFrontOriginAccessIdentity}"
           Action: "s3:GetObject"
           Resource: !Sub "arn:aws:s3:::${S3Bucket}/*"
+
+  S3Bucket2:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Sub "codepipeline-${AWS::Region}-${PJPrefix}-artifacts"
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - 
+          ServerSideEncryptionByDefault: 
+            SSEAlgorithm: "AES256"
+          BucketKeyEnabled: false
+      OwnershipControls: 
+        Rules: 
+        - 
+          ObjectOwnership: "BucketOwnerEnforced"
+      PublicAccessBlockConfiguration: 
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  S3BucketPolicy2:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref S3Bucket2
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Id: "SSEAndSSLPolicy"
+        Statement: 
+        - 
+          Sid: "DenyUnEncryptedObjectUploads"
+          Effect: "Deny"
+          Principal: "*"
+          Action: "s3:PutObject"
+          Resource: !Sub "arn:aws:s3:::${S3Bucket2}/*"
+          Condition: 
+            StringNotEquals: 
+              "s3:x-amz-server-side-encryption": "aws:kms"
+        - 
+          Sid: "DenyInsecureConnections"
+          Effect: "Deny"
+          Principal: "*"
+          Action: "s3:*"
+          Resource: !Sub "arn:aws:s3:::${S3Bucket2}/*"
+          Condition: 
+            Bool: 
+              "aws:SecureTransport": "false"
 
 # IAM権限周りいろいろ
   IAMManagedPolicy:
@@ -1161,7 +1184,7 @@ Resources:
     Type: "AWS::IAM::Role"
     Properties:
       Path: "/service-role/"
-      RoleName: !Sub "AWSCodePipelineServiceRole-${PJPrefix}-codepipel"
+      RoleName: !Sub "AWSCodePipelineServiceRole-${AWS::Region}-${PJPrefix}-codepipel"
       AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"codepipeline.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
       MaxSessionDuration: 3600
       ManagedPolicyArns: 

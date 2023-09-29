@@ -1,9 +1,7 @@
 ARG IMAGE=undefined
 ARG VERSION=latest
 # hadolint ignore=DL3007
-FROM ${IMAGE}:${VERSION}
-# 例）[アカウントID].dkr.ecr.[リージョン].amazonaws.com/[PJ_PREFIX]-ecr-base:latest
-# FROM node:18-alpineと同等だが、CodeCommitからDockerHubへのアクセスが出来ないため自身で作成してプッシュしたものを使用
+FROM node:18-alpine
 
 WORKDIR /usr/src/app
 

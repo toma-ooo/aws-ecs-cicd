@@ -29,6 +29,7 @@ phases:
       - echo Building the Docker image...
       - npm i
       - npm run build
+      - docker pull node:18-alpine
       - docker build -t $REPOSITORY_URI:latest . --build-arg IMAGE=${BASE_REPOSITORY_URI} --build-arg VERSION=latest
       - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
       - docker pull knqyf263/vuln-image:latest
@@ -36,7 +37,7 @@ phases:
       commands:
       - echo Build completed on `date`
       - trivy image --no-progress --format template --template '@/usr/local/share/trivy/templates/html.tpl' -o dist/report.html --severity HIGH,CRITICAL knqyf263/vuln-image:latest
-      - aws s3 sync dist/ s3://cnt-kumagai-report/
+      - aws s3 sync dist/ s3://${PJ_PREFIX}-report/
       - trivy image --no-progress -f json -o results.json --exit-code 0 knqyf263/vuln-image:latest
       # - python3 sechub_parser.py
       - dockle --format json --exit-code 1 --exit-level "FATAL" ${REPOSITORY_URI}:${IMAGE_TAG}
